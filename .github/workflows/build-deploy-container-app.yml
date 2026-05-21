@@ -55,9 +55,17 @@ jobs:
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ secrets.IMAGE_NAME }}:${{ github.sha }}
 
       # Update the existing Container App to use the newly pushed image and set the four
-      # required application environment variables from GitHub secrets
+      # required application environment variables from GitHub secrets.
+      # --registry-server + --registry-identity system tells the Container App to authenticate
+      # to ACR using its own system-assigned managed identity (which has AcrPull).
       - name: Deploy to Azure Container App
         run: |
+          az containerapp registry set \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --server ${{ secrets.ACR_LOGIN_SERVER }} \
+            --identity system
+
           az containerapp update \
             --name ${{ secrets.CONTAINER_APP_NAME }} \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \

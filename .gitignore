@@ -48,6 +48,7 @@ out/
 # Secret files
 .env
 .env.*
+azure-creds.json
 
 # Azure/ADO
 .azure-pipelines.yml
