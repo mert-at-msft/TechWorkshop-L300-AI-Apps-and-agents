@@ -1,0 +1,69 @@
+# Workflow: Build Docker image from src/ and deploy to Azure Container App
+#
+# Required GitHub secrets:
+#   AZURE_CREDENTIALS       - Azure service principal credentials (JSON), created via:
+#                             az ad sp create-for-rbac --sdk-auth --role contributor
+#   ACR_NAME                - Azure Container Registry name (e.g. "myregistry")
+#   ACR_LOGIN_SERVER        - ACR login server hostname (e.g. "myregistry.azurecr.io")
+#   IMAGE_NAME              - Docker image name to use in ACR (e.g. "myapp")
+#   AZURE_RESOURCE_GROUP    - Azure resource group that owns the Container App
+#   CONTAINER_APP_NAME      - Name of the existing Azure Container App to update
+#
+#   # Application environment variables (injected into the Container App on each deploy):
+#   FOUNDRY_ENDPOINT        - Microsoft Foundry endpoint URL
+#   gpt_endpoint            - GPT model endpoint URL
+#   embedding_endpoint      - Text-embedding model endpoint URL
+#   phi_4_endpoint          - Phi-4 model endpoint URL
+
+name: Build and Deploy to Azure Container App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Authenticate with Azure using a service principal stored in AZURE_CREDENTIALS
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Log in to the Azure Container Registry so Docker can push the image
+      - name: Log in to Azure Container Registry
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      # Build the Docker image using the Dockerfile in src/ with src/ as the build context,
+      # then tag it with the current commit SHA for traceability
+      - name: Build Docker image
+        run: |
+          docker build \
+            --file src/Dockerfile \
+            --tag ${{ secrets.ACR_LOGIN_SERVER }}/${{ secrets.IMAGE_NAME }}:${{ github.sha }} \
+            src/
+
+      # Push the tagged image to ACR
+      - name: Push Docker image to ACR
+        run: |
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ secrets.IMAGE_NAME }}:${{ github.sha }}
+
+      # Update the existing Container App to use the newly pushed image and set the four
+      # required application environment variables from GitHub secrets
+      - name: Deploy to Azure Container App
+        run: |
+          az containerapp update \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/${{ secrets.IMAGE_NAME }}:${{ github.sha }} \
+            --set-env-vars \
+              "FOUNDRY_ENDPOINT=${{ secrets.FOUNDRY_ENDPOINT }}" \
+              "gpt_endpoint=${{ secrets.gpt_endpoint }}" \
+              "embedding_endpoint=${{ secrets.embedding_endpoint }}" \
+              "phi_4_endpoint=${{ secrets.phi_4_endpoint }}"
